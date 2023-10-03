@@ -49,25 +49,30 @@ impl TSNode {
     fn from(node: tree_sitter::Node) -> TSNode {
         let mut cursor = node.walk();
 
+        let children = node
+            .children(&mut cursor)
+            .map(|child| TSNode::from(child))
+            .collect::<Vec<_>>();
+
         let range = cursor.node().range();
 
-        let children = vec![];
+        let range = TSRange {
+            start_byte: range.start_byte,
+            end_byte: range.end_byte,
+            start_point: TSPoint {
+                row: range.start_point.row,
+                column: range.start_point.column,
+            },
+            end_point: TSPoint {
+                row: range.end_point.row,
+                column: range.end_point.column,
+            },
+        };
 
         let node = TSNode {
             id: node.id(),
             kind: node.kind().to_string(),
-            range: TSRange {
-                start_byte: range.start_byte,
-                end_byte: range.end_byte,
-                start_point: TSPoint {
-                    row: range.start_point.row,
-                    column: range.start_point.column,
-                },
-                end_point: TSPoint {
-                    row: range.end_point.row,
-                    column: range.end_point.column,
-                },
-            },
+            range,
             children,
         };
 
