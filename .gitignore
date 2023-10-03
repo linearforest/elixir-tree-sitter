@@ -24,3 +24,4 @@ tree_sitter-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+priv/
