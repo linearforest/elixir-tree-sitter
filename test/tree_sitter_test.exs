@@ -10,30 +10,26 @@ defmodule TreeSitterTest do
     assert TreeSitter.add(1, 2) == 3
   end
 
-  test "parse javascript" do
-    TreeSitter.parse(
-      """
-      console.log(1 + 2)
-      """,
-      :javascript
-    )
-    |> IO.inspect()
+  describe "parse/2" do
+    test "javascript" do
+      assert {:ok, %TreeSitter.Node{kind: "program", children: [_]}} =
+               TreeSitter.parse("1 + 2", :javascript)
+    end
 
-    assert TreeSitter.parse(
-             """
-             console.log(1 + 2)
-             """,
-             :javascript
-           ) == {:ok, %{}}
-  end
+    test "html" do
+      assert {:ok, %TreeSitter.Node{kind: "fragment", children: [_]}} =
+               TreeSitter.parse("<html></html>", :html)
+    end
 
-  test "parse html" do
-    assert TreeSitter.parse(
-             """
-             <html><p>hello</p></html>
-             """,
-             :html
-           ) == {:ok, %{}}
+    test "css" do
+      assert {:ok, %TreeSitter.Node{kind: "stylesheet", children: [_]}} =
+               TreeSitter.parse("body {}", :css)
+    end
+
+    test "liquid" do
+      assert {:ok, %TreeSitter.Node{kind: "stylesheet", children: [_]}} =
+               TreeSitter.parse("{a | b}", :liquid)
+    end
   end
 
   test "to_sexp/2" do
@@ -41,25 +37,5 @@ defmodule TreeSitterTest do
              "<html></html>",
              :html
            ) == {:ok, "(fragment (element (start_tag (tag_name)) (end_tag (tag_name))))"}
-  end
-
-  test "parse css" do
-    assert TreeSitter.parse(
-             """
-             body {
-               color: red;
-             }
-             """,
-             :css
-           ) == {:ok, %{}}
-  end
-
-  test "parse liquid" do
-    assert TreeSitter.parse(
-             """
-             <span class="visually-hidden">{{ price | money }}</span>
-             """,
-             :html
-           ) == {:ok, %{}}
   end
 end
