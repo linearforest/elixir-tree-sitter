@@ -1,4 +1,10 @@
+#![feature(assert_matches)]
+
 use tree_sitter::Parser;
+
+extern "C" {
+    fn tree_sitter_liquid() -> tree_sitter::Language;
+}
 
 mod atoms {
     rustler::atoms! {}
@@ -9,6 +15,7 @@ enum Language {
     Javascript,
     Html,
     Css,
+    Liquid,
 }
 
 #[derive(Debug, rustler::NifTaggedEnum)]
@@ -17,7 +24,7 @@ enum ParseError {
     LanguageError,
 }
 
-#[derive(Debug, rustler::NifTaggedEnum)]
+#[derive(Debug, PartialEq, Eq, rustler::NifTaggedEnum)]
 enum NodeType {
     Named,
     Error,
@@ -26,7 +33,7 @@ enum NodeType {
     Anonymous,
 }
 
-#[derive(Debug, rustler::NifStruct)]
+#[derive(Debug, PartialEq, Eq, rustler::NifStruct)]
 #[module = "TreeSitter.Token"]
 pub struct Token {
     kind: String,
@@ -34,7 +41,7 @@ pub struct Token {
     node_type: NodeType,
 }
 
-#[derive(Debug, rustler::NifStruct)]
+#[derive(Debug, PartialEq, Eq, rustler::NifStruct)]
 #[module = "TreeSitter.Node"]
 pub struct TSNode {
     id: usize,
@@ -47,7 +54,7 @@ pub struct TSNode {
     is_missing: bool,
 }
 
-#[derive(Debug, rustler::NifStruct)]
+#[derive(Debug, PartialEq, Eq, rustler::NifStruct)]
 #[module = "TreeSitter.Range"]
 pub struct TSRange {
     pub start_byte: usize,
@@ -56,7 +63,7 @@ pub struct TSRange {
     pub end_point: TSPoint,
 }
 
-#[derive(Debug, rustler::NifStruct)]
+#[derive(Debug, PartialEq, Eq, rustler::NifStruct)]
 #[module = "TreeSitter.Point"]
 pub struct TSPoint {
     row: usize,
@@ -181,11 +188,21 @@ fn get_language(language: Language) -> tree_sitter::Language {
         Language::Javascript => tree_sitter_javascript::language(),
         Language::Html => tree_sitter_html::language(),
         Language::Css => tree_sitter_css::language(),
+        Language::Liquid => unsafe { tree_sitter_liquid() },
     }
 }
 
-#[rustler::nif]
-fn parse(corpus: String, language: Language) -> Result<TSNode, ParseError> {
+fn get_parser(language: Language) -> Result<Parser, ParseError> {
+    let mut parser = Parser::new();
+    let lang = get_language(language);
+
+    parser
+        .set_language(lang)
+        .map_err(|_| ParseError::LanguageError)
+        .map(|_| parser)
+}
+
+fn do_parse(corpus: String, language: Language) -> Result<TSNode, ParseError> {
     let mut parser = Parser::new();
     let lang = get_language(language);
 
@@ -196,38 +213,104 @@ fn parse(corpus: String, language: Language) -> Result<TSNode, ParseError> {
         .map(|tree| TSNode::from(tree.root_node()))
 }
 
-#[rustler::nif]
-fn lex(corpus: String, language: Language) -> Result<Vec<Token>, ParseError> {
-    let mut parser = Parser::new();
-    let lang = get_language(language);
-
-    parser
-        .set_language(lang)
-        .map_err(|_| ParseError::LanguageError)
-        .and_then(|_| parser.parse(&corpus, None).ok_or(ParseError::ParseError))
+fn do_to_tokens(corpus: String, language: Language) -> Result<Vec<Token>, ParseError> {
+    get_parser(language)
+        .and_then(|mut parser| parser.parse(&corpus, None).ok_or(ParseError::ParseError))
         .map(|tree| collect_tokens(&corpus.as_bytes(), &mut tree.root_node().walk()))
 }
 
 #[rustler::nif]
-fn to_sexp(corpus: String, language: Language) -> Result<String, ParseError> {
-    let mut parser = Parser::new();
-    let lang = get_language(language);
+fn parse(corpus: String, language: Language) -> Result<TSNode, ParseError> {
+    do_parse(corpus, language)
+}
 
-    parser
-        .set_language(lang)
-        .map_err(|_| ParseError::LanguageError)
-        .and_then(|_| parser.parse(&corpus, None).ok_or(ParseError::ParseError))
+#[rustler::nif]
+fn to_tokens(corpus: String, language: Language) -> Result<Vec<Token>, ParseError> {
+    do_to_tokens(corpus, language)
+}
+
+#[rustler::nif]
+fn to_sexp(corpus: String, language: Language) -> Result<String, ParseError> {
+    get_parser(language)
+        .and_then(|mut parser| parser.parse(&corpus, None).ok_or(ParseError::ParseError))
         .map(|tree| tree.root_node().to_sexp())
 }
 
 #[cfg(test)]
 mod tests {
+
+    use std::assert_matches::assert_matches;
+
     use super::*;
 
     #[test]
-    fn test_parse() {
-        assert!(true)
+    fn test_parse_javascript() {
+        let corpus = String::from("let x = 1;");
+        let result = do_parse(corpus, Language::Javascript);
+        assert_matches!(result, Ok(_));
+    }
+
+    #[test]
+    fn test_parse_liquid() {
+        let corpus = String::from("{{ x | y | z}}");
+        let result = do_parse(corpus, Language::Liquid);
+        assert_matches!(result, Ok(_));
+    }
+
+    #[test]
+    fn test_parse_css() {
+        let corpus = String::from("body .a .b {}");
+        let result = do_parse(corpus, Language::Css);
+        assert_matches!(result, Ok(_));
+    }
+
+    #[test]
+    fn test_parse_html() {
+        let corpus = String::from("<html></html>");
+        let result = do_parse(corpus, Language::Css);
+        assert_matches!(result, Ok(_));
+    }
+
+    #[test]
+    fn test_to_tokens() {
+        let corpus = String::from("<html></html>");
+        let result = do_to_tokens(corpus, Language::Html);
+        assert_eq!(
+            result.unwrap(),
+            [
+                Token {
+                    kind: String::from("<"),
+                    value: String::from("<"),
+                    node_type: NodeType::Anonymous
+                },
+                Token {
+                    kind: String::from("tag_name"),
+                    value: String::from("html"),
+                    node_type: NodeType::Named
+                },
+                Token {
+                    kind: String::from(">"),
+                    value: String::from(">"),
+                    node_type: NodeType::Anonymous
+                },
+                Token {
+                    kind: String::from("</"),
+                    value: String::from("</"),
+                    node_type: NodeType::Anonymous
+                },
+                Token {
+                    kind: String::from("tag_name"),
+                    value: String::from("html"),
+                    node_type: NodeType::Named
+                },
+                Token {
+                    kind: String::from(">"),
+                    value: String::from(">"),
+                    node_type: NodeType::Anonymous
+                }
+            ]
+        );
     }
 }
 
-rustler::init!("Elixir.TreeSitter", [parse, to_sexp, lex]);
+rustler::init!("Elixir.TreeSitter", [parse, to_sexp, to_tokens]);

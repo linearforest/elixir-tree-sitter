@@ -20,14 +20,14 @@ defmodule TreeSitterTest do
     end
 
     test "liquid" do
-      assert {:ok, %TreeSitter.Node{kind: "stylesheet", children: [_]}} =
-               TreeSitter.parse("{a | b}", :liquid)
+      assert {:ok, %TreeSitter.Node{kind: "program", children: [_, _, _]}} =
+               TreeSitter.parse("{{a | b}}", :liquid)
     end
   end
 
-  describe "lex/2" do
+  describe "to_tokens/2" do
     test "javascript" do
-      assert TreeSitter.lex("1 + 2", :javascript) ==
+      assert TreeSitter.to_tokens("1 + 2", :javascript) ==
                {:ok,
                 [
                   %Token{

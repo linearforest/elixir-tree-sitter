@@ -46,7 +46,7 @@ defmodule TreeSitter do
   end
 
   def parse(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
-  def lex(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
+  def to_tokens(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
   def to_sexp(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
 end
 
