@@ -28,6 +28,10 @@ defmodule TreeSitter do
     defstruct [:row, :column]
   end
 
+  defmodule Token do
+    defstruct [:kind, :node_type, :value]
+  end
+
   @doc """
   Hello world.
 
@@ -41,9 +45,8 @@ defmodule TreeSitter do
     :world
   end
 
-  def add(_a, _b), do: :erlang.nif_error(:nif_not_loaded)
-
   def parse(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
+  def lex(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
   def to_sexp(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
 end
 
@@ -52,6 +55,18 @@ defimpl Inspect, for: TreeSitter.Point do
 
   def inspect(point, opts) do
     concat([point.row |> Inspect.inspect(opts), ":", point.column |> Inspect.inspect(opts)])
+  end
+end
+
+defimpl Inspect, for: TreeSitter.Token do
+  import Inspect.Algebra
+
+  def inspect(token, opts) do
+    concat([
+      "#T<",
+      token.kind,
+      ">"
+    ])
   end
 end
 

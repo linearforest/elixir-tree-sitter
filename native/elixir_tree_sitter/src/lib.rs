@@ -4,22 +4,34 @@ mod atoms {
     rustler::atoms! {}
 }
 
-#[derive(rustler::NifTaggedEnum)]
+#[derive(Debug, rustler::NifTaggedEnum)]
 enum Language {
     Javascript,
     Html,
     Css,
 }
 
-#[derive(rustler::NifTaggedEnum)]
+#[derive(Debug, rustler::NifTaggedEnum)]
 enum ParseError {
     ParseError,
     LanguageError,
 }
 
-#[rustler::nif]
-fn add(a: i64, b: i64) -> i64 {
-    a + b
+#[derive(Debug, rustler::NifTaggedEnum)]
+enum NodeType {
+    Named,
+    Error,
+    Extra,
+    Missing,
+    Anonymous,
+}
+
+#[derive(Debug, rustler::NifStruct)]
+#[module = "TreeSitter.Token"]
+pub struct Token {
+    kind: String,
+    value: String,
+    node_type: NodeType,
 }
 
 #[derive(Debug, rustler::NifStruct)]
@@ -92,6 +104,48 @@ impl TSNode {
     }
 }
 
+fn collect_tokens(source: &[u8], cursor: &mut tree_sitter::TreeCursor) -> Vec<Token> {
+    let mut tokens: Vec<Token> = Vec::new();
+
+    loop {
+        let node = cursor.node();
+
+        if node.child_count() == 0 {
+            let text = node.utf8_text(&source).expect("Error getting text");
+
+            let node_type = if node.is_error() {
+                NodeType::Error
+            } else if node.is_extra() {
+                NodeType::Extra
+            } else if node.is_missing() {
+                NodeType::Missing
+            } else if node.is_named() {
+                NodeType::Named
+            } else {
+                NodeType::Anonymous
+            };
+
+            let value = Token {
+                kind: node.kind().to_owned(),
+                value: text.to_owned(),
+                node_type,
+            };
+
+            tokens.push(value);
+        }
+
+        if cursor.goto_first_child() {
+            let mut child_tokens = collect_tokens(source, cursor);
+            tokens.append(&mut child_tokens);
+            cursor.goto_parent();
+        }
+
+        if !cursor.goto_next_sibling() {
+            break tokens;
+        }
+    }
+}
+
 fn print_cursor(src: &str, cursor: &mut tree_sitter::TreeCursor, depth: usize) {
     loop {
         let node = cursor.node();
@@ -143,6 +197,18 @@ fn parse(corpus: String, language: Language) -> Result<TSNode, ParseError> {
 }
 
 #[rustler::nif]
+fn lex(corpus: String, language: Language) -> Result<Vec<Token>, ParseError> {
+    let mut parser = Parser::new();
+    let lang = get_language(language);
+
+    parser
+        .set_language(lang)
+        .map_err(|_| ParseError::LanguageError)
+        .and_then(|_| parser.parse(&corpus, None).ok_or(ParseError::ParseError))
+        .map(|tree| collect_tokens(&corpus.as_bytes(), &mut tree.root_node().walk()))
+}
+
+#[rustler::nif]
 fn to_sexp(corpus: String, language: Language) -> Result<String, ParseError> {
     let mut parser = Parser::new();
     let lang = get_language(language);
@@ -164,4 +230,4 @@ mod tests {
     }
 }
 
-rustler::init!("Elixir.TreeSitter", [add, parse, to_sexp]);
+rustler::init!("Elixir.TreeSitter", [parse, to_sexp, lex]);

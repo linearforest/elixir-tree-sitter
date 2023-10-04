@@ -1,14 +1,7 @@
 defmodule TreeSitterTest do
+  alias TreeSitter.Token
   use ExUnit.Case
   doctest TreeSitter
-
-  test "greets the world" do
-    assert TreeSitter.hello() == :world
-  end
-
-  test "works" do
-    assert TreeSitter.add(1, 2) == 3
-  end
 
   describe "parse/2" do
     test "javascript" do
@@ -29,6 +22,26 @@ defmodule TreeSitterTest do
     test "liquid" do
       assert {:ok, %TreeSitter.Node{kind: "stylesheet", children: [_]}} =
                TreeSitter.parse("{a | b}", :liquid)
+    end
+  end
+
+  describe "lex/2" do
+    test "javascript" do
+      assert TreeSitter.lex("1 + 2", :javascript) ==
+               {:ok,
+                [
+                  %Token{
+                    node_type: :named,
+                    value: "1",
+                    kind: "number"
+                  },
+                  %Token{node_type: :anonymous, value: "+", kind: "+"},
+                  %Token{
+                    node_type: :named,
+                    value: "2",
+                    kind: "number"
+                  }
+                ]}
     end
   end
 
