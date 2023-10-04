@@ -1,0 +1,13 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  GREETING: Hello, World!
+
+tasks:
+  cargo:
+    dir: ./native/elixir_tree_sitter
+    cmds:
+      - cargo {{.CLI_ARGS}}
+    silent: true

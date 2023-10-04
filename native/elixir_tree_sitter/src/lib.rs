@@ -1,9 +1,7 @@
 use tree_sitter::Parser;
 
 mod atoms {
-    rustler::atoms! {
-        id
-    }
+    rustler::atoms! {}
 }
 
 #[derive(rustler::NifTaggedEnum)]
@@ -11,6 +9,12 @@ enum Language {
     Javascript,
     Html,
     Css,
+}
+
+#[derive(rustler::NifTaggedEnum)]
+enum ParseError {
+    ParseError,
+    LanguageError,
 }
 
 #[rustler::nif]
@@ -21,10 +25,14 @@ fn add(a: i64, b: i64) -> i64 {
 #[derive(Debug, rustler::NifStruct)]
 #[module = "TreeSitter.Node"]
 pub struct TSNode {
-    pub id: usize,
-    pub kind: String,
-    pub range: TSRange,
-    pub children: Vec<TSNode>,
+    id: usize,
+    kind: String,
+    range: TSRange,
+    children: Vec<TSNode>,
+    is_named: bool,
+    is_error: bool,
+    is_extra: bool,
+    is_missing: bool,
 }
 
 #[derive(Debug, rustler::NifStruct)]
@@ -72,6 +80,10 @@ impl TSNode {
         let node = TSNode {
             id: node.id(),
             kind: node.kind().to_string(),
+            is_named: node.is_named(),
+            is_error: node.is_error(),
+            is_extra: node.is_extra(),
+            is_missing: node.is_missing(),
             range,
             children,
         };
@@ -110,27 +122,36 @@ fn print_cursor(src: &str, cursor: &mut tree_sitter::TreeCursor, depth: usize) {
     }
 }
 
-#[rustler::nif]
-fn parse(corpus: String, language: Language) -> TSNode {
-    let mut parser = Parser::new();
-
-    let lang = match language {
+fn get_language(language: Language) -> tree_sitter::Language {
+    match language {
         Language::Javascript => tree_sitter_javascript::language(),
         Language::Html => tree_sitter_html::language(),
         Language::Css => tree_sitter_css::language(),
-    };
+    }
+}
+
+#[rustler::nif]
+fn parse(corpus: String, language: Language) -> Result<TSNode, ParseError> {
+    let mut parser = Parser::new();
+    let lang = get_language(language);
 
     parser
         .set_language(lang)
-        .expect("Error loading Rust grammar");
+        .map_err(|_| ParseError::LanguageError)
+        .and_then(|_| parser.parse(&corpus, None).ok_or(ParseError::ParseError))
+        .map(|tree| TSNode::from(tree.root_node()))
+}
 
-    let result = parser.parse(&corpus, None).unwrap();
+#[rustler::nif]
+fn to_sexp(corpus: String, language: Language) -> Result<String, ParseError> {
+    let mut parser = Parser::new();
+    let lang = get_language(language);
 
-    let node = result.root_node();
-
-    print_cursor(&corpus, &mut node.walk(), 0);
-
-    return TSNode::from(node);
+    parser
+        .set_language(lang)
+        .map_err(|_| ParseError::LanguageError)
+        .and_then(|_| parser.parse(&corpus, None).ok_or(ParseError::ParseError))
+        .map(|tree| tree.root_node().to_sexp())
 }
 
 #[cfg(test)]
@@ -151,10 +172,10 @@ mod tests {
 
         let node = result.root_node();
 
-        print_cursor(&corpus, &mut node.walk(), 0);
+        // print_cursor(&corpus, &mut node.walk(), 0);
 
         assert!(false);
     }
 }
 
-rustler::init!("Elixir.TreeSitter", [add, parse]);
+rustler::init!("Elixir.TreeSitter", [add, parse, to_sexp]);
