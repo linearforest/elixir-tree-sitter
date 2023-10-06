@@ -48,10 +48,8 @@ pub struct TSNode {
     kind: String,
     range: TSRange,
     children: Vec<TSNode>,
-    is_named: bool,
-    is_error: bool,
-    is_extra: bool,
-    is_missing: bool,
+    node_type: NodeType,
+    value: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, rustler::NifStruct)]
@@ -73,12 +71,12 @@ pub struct TSPoint {
 impl TSNode {
     // Convert a tree-sitter node into a our TSNode struct, which can be encoded
     // and sent to Elixir.
-    fn from(node: tree_sitter::Node) -> TSNode {
+    fn from(node: tree_sitter::Node, corpus: &[u8]) -> TSNode {
         let mut cursor = node.walk();
 
         let children = node
             .children(&mut cursor)
-            .map(|child| TSNode::from(child))
+            .map(|child| TSNode::from(child, corpus))
             .collect::<Vec<_>>();
 
         let range = cursor.node().range();
@@ -96,14 +94,18 @@ impl TSNode {
             },
         };
 
+        let value = if node.child_count() == 0 {
+            node.utf8_text(&corpus).ok().map(|s| s.to_owned())
+        } else {
+            None
+        };
+
         let node = TSNode {
             id: node.id(),
             kind: node.kind().to_string(),
-            is_named: node.is_named(),
-            is_error: node.is_error(),
-            is_extra: node.is_extra(),
-            is_missing: node.is_missing(),
+            node_type: node_type(node),
             range,
+            value,
             children,
         };
 
@@ -120,17 +122,7 @@ fn collect_tokens(source: &[u8], cursor: &mut tree_sitter::TreeCursor) -> Vec<To
         if node.child_count() == 0 {
             let text = node.utf8_text(&source).expect("Error getting text");
 
-            let node_type = if node.is_error() {
-                NodeType::Error
-            } else if node.is_extra() {
-                NodeType::Extra
-            } else if node.is_missing() {
-                NodeType::Missing
-            } else if node.is_named() {
-                NodeType::Named
-            } else {
-                NodeType::Anonymous
-            };
+            let node_type = node_type(node);
 
             let value = Token {
                 kind: node.kind().to_owned(),
@@ -151,6 +143,21 @@ fn collect_tokens(source: &[u8], cursor: &mut tree_sitter::TreeCursor) -> Vec<To
             break tokens;
         }
     }
+}
+
+fn node_type(node: tree_sitter::Node<'_>) -> NodeType {
+    let node_type = if node.is_error() {
+        NodeType::Error
+    } else if node.is_extra() {
+        NodeType::Extra
+    } else if node.is_missing() {
+        NodeType::Missing
+    } else if node.is_named() {
+        NodeType::Named
+    } else {
+        NodeType::Anonymous
+    };
+    node_type
 }
 
 fn print_cursor(src: &str, cursor: &mut tree_sitter::TreeCursor, depth: usize) {
@@ -210,7 +217,7 @@ fn do_parse(corpus: String, language: Language) -> Result<TSNode, ParseError> {
         .set_language(lang)
         .map_err(|_| ParseError::LanguageError)
         .and_then(|_| parser.parse(&corpus, None).ok_or(ParseError::ParseError))
-        .map(|tree| TSNode::from(tree.root_node()))
+        .map(|tree| TSNode::from(tree.root_node(), corpus.as_bytes()))
 }
 
 fn do_to_tokens(corpus: String, language: Language) -> Result<Vec<Token>, ParseError> {

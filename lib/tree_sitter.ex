@@ -12,10 +12,7 @@ defmodule TreeSitter do
       :id,
       :kind,
       :range,
-      :is_named,
-      :is_error,
-      :is_extra,
-      :is_missing,
+      :node_type,
       children: []
     ]
   end
@@ -75,7 +72,6 @@ defimpl Inspect, for: TreeSitter.Node do
 
   def inspect(node, opts) do
     anonymous? = Keyword.get(opts.custom_options, :anonymous, false)
-    extra? = Keyword.get(opts.custom_options, :extra, false)
 
     range =
       concat([
@@ -85,7 +81,7 @@ defimpl Inspect, for: TreeSitter.Node do
       ])
 
     kind =
-      if node.is_named do
+      if node.node_type == :named do
         node.kind
       else
         concat(["\"", node.kind, "\""])
@@ -95,7 +91,16 @@ defimpl Inspect, for: TreeSitter.Node do
       "("
       |> glue("", kind)
       |> glue(range)
-      |> group()
+
+    doc =
+      if node.value do
+        doc
+        |> glue(node.value |> Inspect.inspect(opts))
+      else
+        doc
+      end
+
+    doc = doc |> group()
 
     doc =
       case node.children do
@@ -106,11 +111,11 @@ defimpl Inspect, for: TreeSitter.Node do
           e = empty()
 
           inner =
-            for node <- node.children,
-                node.is_named || anonymous? || (node.is_extra && extra?),
-                reduce: e do
-              ^e -> Inspect.inspect(node, opts)
-              acc -> acc |> glue(Inspect.inspect(node, opts))
+            for node <- node.children, reduce: e do
+              ^e ->
+                Inspect.inspect(node, opts)
+              acc ->
+                glue(acc, Inspect.inspect(node, opts))
             end
 
           doc
