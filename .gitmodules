@@ -1,3 +1,6 @@
 [submodule "native/elixir_tree_sitter/tree-sitter-liquid"]
 	path = native/elixir_tree_sitter/tree-sitter-liquid
 	url = git@github.com:adamazing/tree-sitter-liquid.git
+[submodule "native/elixir_tree_sitter/tree-sitter-liquid-template"]
+	path = native/elixir_tree_sitter/tree-sitter-liquid-template
+	url = git@github.com:linearforest/tree-sitter-liquid-template.git
