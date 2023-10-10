@@ -1,27 +1,35 @@
 #![feature(assert_matches)]
 
-use tree_sitter::Parser;
+use std::collections::HashMap;
+
+use tree_sitter::{Parser, Query, QueryCursor};
 
 extern "C" {
     fn tree_sitter_liquid() -> tree_sitter::Language;
+}
+
+extern "C" {
+    fn tree_sitter_liquid_template() -> tree_sitter::Language;
 }
 
 mod atoms {
     rustler::atoms! {}
 }
 
-#[derive(Debug, rustler::NifTaggedEnum)]
+#[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Clone, rustler::NifTaggedEnum)]
 enum Language {
     Javascript,
     Html,
     Css,
     Liquid,
+    LiquidTemplate,
 }
 
-#[derive(Debug, rustler::NifTaggedEnum)]
+#[derive(Debug, PartialEq, rustler::NifTaggedEnum)]
 enum ParseError {
     ParseError,
     LanguageError,
+    QueryError { message: String },
 }
 
 #[derive(Debug, PartialEq, Eq, rustler::NifTaggedEnum)]
@@ -190,18 +198,27 @@ fn print_cursor(src: &str, cursor: &mut tree_sitter::TreeCursor, depth: usize) {
     }
 }
 
-fn get_language(language: Language) -> tree_sitter::Language {
+fn get_language(language: &Language) -> tree_sitter::Language {
     match language {
         Language::Javascript => tree_sitter_javascript::language(),
         Language::Html => tree_sitter_html::language(),
         Language::Css => tree_sitter_css::language(),
         Language::Liquid => unsafe { tree_sitter_liquid() },
+        Language::LiquidTemplate => unsafe { tree_sitter_liquid_template() },
+    }
+}
+
+fn get_language_from_string(language_string: &str) -> Language {
+    match language_string {
+        "html" => Language::Html,
+        "liquid" => Language::Liquid,
+        _ => panic!("Unknown injection language"),
     }
 }
 
 fn get_parser(language: Language) -> Result<Parser, ParseError> {
     let mut parser = Parser::new();
-    let lang = get_language(language);
+    let lang = get_language(&language);
 
     parser
         .set_language(lang)
@@ -211,7 +228,7 @@ fn get_parser(language: Language) -> Result<Parser, ParseError> {
 
 fn do_parse(corpus: String, language: Language) -> Result<TSNode, ParseError> {
     let mut parser = Parser::new();
-    let lang = get_language(language);
+    let lang = get_language(&language);
 
     parser
         .set_language(lang)
@@ -243,6 +260,118 @@ fn to_sexp(corpus: String, language: Language) -> Result<String, ParseError> {
         .map(|tree| tree.root_node().to_sexp())
 }
 
+// TODO: replace with a more generic approach to embedded languages
+fn do_parse_embedded<'a>(
+    corpus: &str,
+    language: &Language,
+    query: &str,
+) -> Result<HashMap<Language, tree_sitter::Tree>, ParseError> {
+    let mut out: HashMap<Language, tree_sitter::Tree> = HashMap::new();
+
+    let source = corpus.as_bytes();
+
+    let lang = get_language(language);
+
+    let mut parser = Parser::new();
+
+    if cfg!(debug_assertions) {
+        parser.set_logger(Some(Box::new(|log_type, msg| {
+            println!("[{:?}]\t{}", log_type, msg);
+        })));
+    }
+
+    parser
+        .set_language(lang)
+        .map_err(|_| ParseError::LanguageError)?;
+
+    let tree = parser.parse(&corpus, None).ok_or(ParseError::ParseError)?;
+
+    out.insert(language.to_owned(), tree.to_owned());
+
+    let query = Query::new(lang, query).map_err(|err| ParseError::QueryError {
+        message: err.message,
+    })?;
+
+    #[derive(Debug)]
+    struct Injection {
+        ranges: Vec<tree_sitter::Range>,
+        language: Language,
+    }
+
+    let mut injected_languages: HashMap<usize, Injection> = HashMap::new();
+
+    for pattern_idx in 0..query.pattern_count() {
+        for setting in query.property_settings(pattern_idx) {
+            match setting.key.as_ref() {
+                "injection.language" => {
+                    let injection_language = setting.value.as_ref().map(|v| v.as_ref());
+
+                    let language = match injection_language {
+                        Some(language_string) => get_language_from_string(language_string),
+                        _ => panic!("Unknown injection language"),
+                    };
+
+                    injected_languages.insert(
+                        pattern_idx,
+                        Injection {
+                            ranges: Vec::new(),
+                            language,
+                        },
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut cursor = QueryCursor::new();
+
+    for query_match in cursor.matches(&query, tree.root_node(), source) {
+        match injected_languages.get_mut(&query_match.pattern_index) {
+            Some(injection) => {
+                for capture in query_match.captures {
+                    injection.ranges.push(capture.node.range());
+                }
+            }
+            None => {}
+        }
+    }
+
+    for (_, injection) in injected_languages {
+        let lang = get_language(&injection.language);
+        parser.set_language(lang).unwrap();
+        parser.set_included_ranges(&injection.ranges).unwrap();
+        let tree = parser.parse(&source, None).unwrap();
+
+        out.insert(injection.language.to_owned(), tree.to_owned());
+    }
+
+    return Ok(out);
+}
+
+#[rustler::nif]
+fn parse_embedded(
+    corpus: &str,
+    language: Language,
+    query: &str,
+) -> Result<HashMap<Language, TSNode>, ParseError> {
+    let source = &corpus.as_bytes();
+
+    return do_parse_embedded(&corpus, &language, &query).map(|map| {
+        map.iter()
+            .map(|(language, tree)| (language.to_owned(), TSNode::from(tree.root_node(), &source)))
+            .collect::<HashMap<_, _>>()
+    });
+}
+
+// r#"
+// ((content) @injection.content
+//  (#set! injection.language "html"))
+//
+// ((code) @injection.content
+//  (#set! injection.language "liquid"))
+// "#,
+
 #[cfg(test)]
 mod tests {
 
@@ -260,6 +389,7 @@ mod tests {
     #[test]
     fn test_parse_liquid() {
         let corpus = String::from("{{ x | y | z}}");
+
         let result = do_parse(corpus, Language::Liquid);
         assert_matches!(result, Ok(_));
     }
@@ -276,6 +406,51 @@ mod tests {
         let corpus = String::from("<html></html>");
         let result = do_parse(corpus, Language::Css);
         assert_matches!(result, Ok(_));
+    }
+
+    #[test]
+    fn test_embedded_html_liquid() {
+        let corpus = String::from("<html>{% if a %}<span>{{ 1 }}</span>{% endif %}</html>");
+
+        let result = do_parse_embedded(
+            &corpus,
+            &Language::LiquidTemplate,
+            r#"
+            ((content) @injection.content
+             (#set! injection.language "html"))
+
+            ((code) @injection.content
+             (#set! injection.language "liquid"))
+            "#,
+        );
+
+        assert_matches!(result, Ok(_));
+
+        assert_eq!(result.unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_injected_liquid_html_with_comments() {
+        let corpus = String::from("a {{ x }} b {{ # comment }} c {{ y }} d");
+
+        let result = do_parse_embedded(
+            &corpus,
+            &Language::LiquidTemplate,
+            r#"
+            ((content) @injection.content
+             (#set! injection.language "html"))
+
+            ((code) @injection.content
+             (#set! injection.language "liquid"))
+            "#,
+        );
+
+        let trees = result.unwrap();
+
+        assert_eq!(
+            trees[&Language::Liquid].root_node().to_sexp(),
+            "(program (identifier) (comment) (identifier))"
+        );
     }
 
     #[test]
@@ -318,6 +493,25 @@ mod tests {
             ]
         );
     }
+
+    fn pretty_print_sexp(s: &str) -> () {
+        let mut depth = 0;
+        for c in s.chars() {
+            if c == '(' {
+                depth += 1;
+            } else if c == ')' {
+                depth -= 1;
+            }
+            if c == '(' {
+                print!("\n{}", "  ".repeat(depth));
+            }
+            print!("{}", c);
+        }
+        println!();
+    }
 }
 
-rustler::init!("Elixir.TreeSitter", [parse, to_sexp, to_tokens]);
+rustler::init!(
+    "Elixir.TreeSitter",
+    [parse, to_sexp, to_tokens, parse_embedded]
+);

@@ -2,12 +2,37 @@
 
 version: '3'
 
-vars:
-  GREETING: Hello, World!
-
 tasks:
-  cargo:
-    dir: ./native/elixir_tree_sitter
+  test:
     cmds:
-      - cargo {{.CLI_ARGS}}
-    silent: true
+      - task: test-ts-liquid-template
+      - task: test-ts-liquid
+      - task: test-cargo
+      - task: test-mix
+
+  test-ts-liquid-template:
+    dir: ./native/elixir_tree_sitter/tree-sitter-liquid-template
+    sources:
+      - grammar.js
+    cmds:
+      - tree-sitter generate
+      - tree-sitter test
+
+  test-ts-liquid:
+    dir: ./native/elixir_tree_sitter/tree-sitter-liquid
+    sources:
+      - grammar.js
+    cmds:
+      - tree-sitter generate
+      - tree-sitter test
+
+  test-cargo:
+    dir: ./native/elixir_tree_sitter
+    cmd: cargo test
+
+  build-cargo:
+    dir: ./native/elixir_tree_sitter
+    cmd: cargo build
+
+  test-mix:
+    cmd: mix test

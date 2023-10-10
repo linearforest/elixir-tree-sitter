@@ -19,9 +19,13 @@ defmodule TreeSitterTest do
                TreeSitter.parse("body {}", :css)
     end
 
-    test "liquid" do
-      assert {:ok, %TreeSitter.Node{kind: "program", children: [_, _, _]}} =
-               TreeSitter.parse("{{a | b}}", :liquid)
+    test "liquid_template" do
+      assert {:ok,
+              %{
+                kind: "template",
+                children: [%{kind: "output_directive"}]
+              }} =
+               TreeSitter.parse("{{a | b}}", :liquid_template)
     end
   end
 
@@ -42,6 +46,55 @@ defmodule TreeSitterTest do
                     kind: "number"
                   }
                 ]}
+    end
+  end
+
+  describe "parse_embedded/3" do
+    test "works" do
+      assert {:ok,
+              %{
+                html: %{kind: "fragment"},
+                liquid: %{kind: "program"},
+                liquid_template: %{kind: "template"}
+              }} =
+               TreeSitter.parse_embedded(
+                 "{% if true %}<span>a</span>{% endif %}",
+                 :liquid_template,
+                 """
+                 ((content) @injection.content
+                  (#set! injection.language "html"))
+
+                 ((code) @injection.content
+                  (#set! injection.language "liquid"))
+                 """
+               )
+    end
+
+    test "parses comments correctly" do
+      assert {:ok,
+              %{
+                html: %{kind: "fragment"},
+                liquid: %{
+                  kind: "program",
+                  children: [
+                    %{kind: "identifier"},
+                    %{kind: "comment"},
+                    %{kind: "identifier"}
+                  ]
+                },
+                liquid_template: %{kind: "template"}
+              }} =
+               TreeSitter.parse_embedded(
+                 "a {{ x }} b {{ # comment }} c {{ y }} d",
+                 :liquid_template,
+                 """
+                 ((content) @injection.content
+                  (#set! injection.language "html"))
+
+                 ((code) @injection.content
+                  (#set! injection.language "liquid"))
+                 """
+               )
     end
   end
 

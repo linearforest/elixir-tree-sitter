@@ -45,6 +45,7 @@ defmodule TreeSitter do
   def parse(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
   def to_tokens(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
   def to_sexp(_corpus, _language), do: :erlang.nif_error(:nif_not_loaded)
+  def parse_embedded(_corpus, _language, _query), do: :erlang.nif_error(:nif_not_loaded)
 end
 
 defimpl Inspect, for: TreeSitter.Point do

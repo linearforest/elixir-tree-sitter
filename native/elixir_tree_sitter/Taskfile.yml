@@ -1,0 +1,22 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  GREETING: Hello, World!
+
+includes:
+  tree-sitter-liquid:
+    taskfile: ./tree-sitter-liquid
+    dir: ./tree-sitter-liquid
+  tree-sitter-liquid-template:
+    taskfile: ./tree-sitter-liquid-template
+    dir: ./tree-sitter-liquid-template
+
+tasks:
+  test:
+    deps:
+      - task: tree-sitter-liquid:test
+      - task: tree-sitter-liquid-template:test
+    cmds:
+      - cargo test
