@@ -1,5 +1,3 @@
-#![feature(assert_matches)]
-
 use std::collections::HashMap;
 
 use tree_sitter::{Parser, Query, QueryCursor};
