@@ -4,13 +4,13 @@ use std::collections::HashMap;
 
 use tree_sitter::{Parser, Query, QueryCursor};
 
-extern "C" {
-    fn tree_sitter_liquid() -> tree_sitter::Language;
-}
+// extern "C" {
+//     fn tree_sitter_liquid() -> tree_sitter::Language;
+// }
 
-extern "C" {
-    fn tree_sitter_liquid_template() -> tree_sitter::Language;
-}
+// extern "C" {
+//     fn tree_sitter_liquid_template() -> tree_sitter::Language;
+// }
 
 mod atoms {
     rustler::atoms! {}
@@ -21,8 +21,8 @@ enum Language {
     Javascript,
     Html,
     Css,
-    Liquid,
-    LiquidTemplate,
+    // Liquid,
+    // LiquidTemplate,
 }
 
 #[derive(Debug, PartialEq, rustler::NifTaggedEnum)]
@@ -203,15 +203,15 @@ fn get_language(language: &Language) -> tree_sitter::Language {
         Language::Javascript => tree_sitter_javascript::language(),
         Language::Html => tree_sitter_html::language(),
         Language::Css => tree_sitter_css::language(),
-        Language::Liquid => unsafe { tree_sitter_liquid() },
-        Language::LiquidTemplate => unsafe { tree_sitter_liquid_template() },
+        // Language::Liquid => unsafe { tree_sitter_liquid() },
+        // Language::LiquidTemplate => unsafe { tree_sitter_liquid_template() },
     }
 }
 
 fn get_language_from_string(language_string: &str) -> Language {
     match language_string {
         "html" => Language::Html,
-        "liquid" => Language::Liquid,
+        // "liquid" => Language::Liquid,
         _ => panic!("Unknown injection language"),
     }
 }
@@ -374,9 +374,7 @@ fn parse_embedded(
 
 #[cfg(test)]
 mod tests {
-
-    use std::assert_matches::assert_matches;
-
+    use assert_matches::assert_matches;
     use super::*;
 
     #[test]
@@ -386,13 +384,13 @@ mod tests {
         assert_matches!(result, Ok(_));
     }
 
-    #[test]
-    fn test_parse_liquid() {
-        let corpus = String::from("{{ x | y | z}}");
+    // #[test]
+    // fn test_parse_liquid() {
+    //     let corpus = String::from("{{ x | y | z}}");
 
-        let result = do_parse(corpus, Language::Liquid);
-        assert_matches!(result, Ok(_));
-    }
+    //     let result = do_parse(corpus, Language::Liquid);
+    //     assert_matches!(result, Ok(_));
+    // }
 
     #[test]
     fn test_parse_css() {
@@ -408,50 +406,50 @@ mod tests {
         assert_matches!(result, Ok(_));
     }
 
-    #[test]
-    fn test_embedded_html_liquid() {
-        let corpus = String::from("<html>{% if a %}<span>{{ 1 }}</span>{% endif %}</html>");
+    // #[test]
+    // fn test_embedded_html_liquid() {
+    //     let corpus = String::from("<html>{% if a %}<span>{{ 1 }}</span>{% endif %}</html>");
 
-        let result = do_parse_embedded(
-            &corpus,
-            &Language::LiquidTemplate,
-            r#"
-            ((content) @injection.content
-             (#set! injection.language "html"))
+    //     let result = do_parse_embedded(
+    //         &corpus,
+    //         &Language::LiquidTemplate,
+    //         r#"
+    //         ((content) @injection.content
+    //          (#set! injection.language "html"))
 
-            ((code) @injection.content
-             (#set! injection.language "liquid"))
-            "#,
-        );
+    //         ((code) @injection.content
+    //          (#set! injection.language "liquid"))
+    //         "#,
+    //     );
 
-        assert_matches!(result, Ok(_));
+    //     assert_matches!(result, Ok(_));
 
-        assert_eq!(result.unwrap().len(), 3);
-    }
+    //     assert_eq!(result.unwrap().len(), 3);
+    // }
 
-    #[test]
-    fn test_injected_liquid_html_with_comments() {
-        let corpus = String::from("a {{ x }} b {{ # comment }} c {{ y }} d");
+    // #[test]
+    // fn test_injected_liquid_html_with_comments() {
+    //     let corpus = String::from("a {{ x }} b {{ # comment }} c {{ y }} d");
 
-        let result = do_parse_embedded(
-            &corpus,
-            &Language::LiquidTemplate,
-            r#"
-            ((content) @injection.content
-             (#set! injection.language "html"))
+    //     let result = do_parse_embedded(
+    //         &corpus,
+    //         &Language::LiquidTemplate,
+    //         r#"
+    //         ((content) @injection.content
+    //          (#set! injection.language "html"))
 
-            ((code) @injection.content
-             (#set! injection.language "liquid"))
-            "#,
-        );
+    //         ((code) @injection.content
+    //          (#set! injection.language "liquid"))
+    //         "#,
+    //     );
 
-        let trees = result.unwrap();
+    //     let trees = result.unwrap();
 
-        assert_eq!(
-            trees[&Language::Liquid].root_node().to_sexp(),
-            "(program (identifier) (comment) (identifier))"
-        );
-    }
+    //     assert_eq!(
+    //         trees[&Language::Liquid].root_node().to_sexp(),
+    //         "(program (identifier) (comment) (identifier))"
+    //     );
+    // }
 
     #[test]
     fn test_to_tokens() {
